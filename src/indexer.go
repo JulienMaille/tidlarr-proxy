@@ -156,7 +156,7 @@ func buildSearchResponse(queryUrl string) string {
 	}
 	var Albums []Album
 	//iterate over each album and create an Album struct object from it
-	result := gjson.Get(bodyBytes, "albums.items")
+	result := gjson.Get(bodyBytes, "data.albums.items")
 	result.ForEach(func(key, value gjson.Result) bool {
 		var album Album
 		var resultString string = value.String()
@@ -179,28 +179,24 @@ func buildSearchResponse(queryUrl string) string {
 		album.Size = int64(float64(((album.SamplingRate * 1000) * (album.BitDepth * album.Channels * album.Duration) / 8)) * 0.7)
 		Albums = append(Albums, album)
 
-		/*if (gjson.Get(resultString, "mediaMetadata.tags.#(%\"HIRES_LOSSLESS\")").Exists()) {
+		if (gjson.Get(resultString, "mediaMetadata.tags.#(%\"HIRES_LOSSLESS\")").Exists()) {
 			fmt.Println("Found HiRes for Album " + album.Title)
 			hiresAlbum := album
-			var albumQueryUrl string = "/album/?id=" + album.Id
+			var albumQueryUrl string = "/album/" + album.Id
 			albumBytes, err := request(albumQueryUrl)
 			if err != nil {
 				fmt.Println(err)
 			}
-			var trackId string = gjson.Get(albumBytes, "1.items.1.item.id").String()
+			var trackId string = gjson.Get(albumBytes, "data.items.1.item.id").String()
 			fmt.Println("Looking up info on track " + trackId)
-			var trackQueryUrl string = "/dash/?id=" + trackId
+			var trackQueryUrl string = "/track/?id=" + trackId + "&quality=HI_RES_LOSSLESS"
 			trackBytes, err := request(trackQueryUrl)
 			if err != nil {
 				fmt.Println(err)
 			}
-			reg := regexp.MustCompile("audioSamplingRate=\"[0-9]*\">")
-			var rateString string = reg.FindString(trackBytes)
-			rateString = rateString[19:len(rateString)-2]
-			rateNum, _ := strconv.Atoi(rateString)
-			hiresAlbum.SamplingRate = int64(rateNum)/1000
+			hiresAlbum.SamplingRate = gjson.Get(trackBytes, "data.sampleRate").Int()/1000
 			//We don't actually know this until we download it, but the chance it's >16 is pretty high
-			hiresAlbum.BitDepth = 24
+			hiresAlbum.BitDepth = gjson.Get(trackBytes, "data.bitDepth").Int()
 
 			//recalculate size based on new bit depth and sample rate
 			hiresAlbum.Size = int64(float64(((hiresAlbum.SamplingRate * 1000) * (hiresAlbum.BitDepth * hiresAlbum.Channels * hiresAlbum.Duration) / 8)) * 0.7)
@@ -208,7 +204,7 @@ func buildSearchResponse(queryUrl string) string {
 			//differentiate hires release from regular release
 			hiresAlbum.Id += "%hires"
 			Albums = append(Albums, hiresAlbum)
-		}*/
+		}
 		return true // keep iterating
 	})
 	//Create XML Response

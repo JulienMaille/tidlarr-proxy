@@ -15,7 +15,7 @@ import (
 var DownloadPath string
 var Category string
 var Port string
-var ApiLink = [...]string{"https://triton.squid.wtf", "https://aether.squid.wtf", "https://zeus.squid.wtf", "https://kraken.squid.wtf", "https://phoenix.squid.wtf", "https://shiva.squid.wtf", "https://chaos.squid.wtf", "https://ohio.monochrome.tf", "https://virginia.monochrome.tf", "https://oregon.monochrome.tf", "https://frankfurt.monochrome.tf", "https://singapore.monochrome.tf", "https://wolf.qqdl.site", "https://maus.qqdl.site", "https://vogel.qqdl.site", "https://katze.qqdl.site", "https://hund.qqdl.site"}
+var ApiLink = [...]string{"https://triton.squid.wtf"}
 var ApiKey string
 
 func getEnv(key string, fallback string) string {
