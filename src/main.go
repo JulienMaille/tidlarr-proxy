@@ -15,7 +15,7 @@ import (
 var DownloadPath string
 var Category string
 var Port string
-var ApiLink = [...]string{"https://triton.squid.wtf"}
+var ApiLink = [...]string{"https://triton.squid.wtf", "https://tidal.kinoplus.online", "https://tidal-api.binimum.org", "https://tidal-api-2.binimum.org"}
 var ApiKey string
 
 func getEnv(key string, fallback string) string {
