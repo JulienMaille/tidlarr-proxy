@@ -187,7 +187,7 @@ func buildSearchResponse(queryUrl string) string {
 		if (gjson.Get(resultString, "mediaMetadata.tags.#(%\"HIRES_LOSSLESS\")").Exists()) {
 			fmt.Println("Found HiRes for Album " + album.Title)
 			hiresAlbum := album
-			var albumQueryUrl string = "/album/" + album.Id
+			var albumQueryUrl string = "/album?id=" + album.Id
 			albumBytes, err := request(albumQueryUrl)
 			if err != nil {
 				fmt.Println(err)
@@ -229,16 +229,18 @@ func buildSearchResponse(queryUrl string) string {
 		album.Artist = reg.ReplaceAllString(album.Artist, "")
 		timestamp, _ := time.Parse("2006-01-02", album.ReleaseDate)
 
+		Release := releaseName(album)
+
 		response += "<item>" +
 			"    <!-- Standard RSS 2.0 Data -->" +
-			"    <title>" + releaseName(album) + "</title>" +
-			"    <guid isPermaLink=\"true\">http://www.tidal.com/album/" + album.Id + "</guid>" +
+			"    <title>" + Release + "</title>" +
+			"    <guid isPermaLink=\"true\">http://www.tidal.com/album?id=" + album.Id + "</guid>" +
 			"    <link>http://www.tidal.com/album/" + album.Id + "</link>" +
 			"    <comments>http://www.tidal.com/album/" + album.Id + "#comments</comments>" +
 			"    <pubDate>" + timestamp.Format("Mon, 02 Jan 2006 15:04:05 -0700") + "</pubDate>" +
 			"    <category>Audio > Lossless</category>" +
 			"    <description>" + album.Artist + " " + album.Title + "</description>" +
-			"    <enclosure url=\"/indexer?t=fakenzb&amp;tidalid=" + album.Id + "&amp;numtracks=" + strconv.FormatInt(album.NumTracks, 10) + "&amp;apikey=" + ApiKey + "\" type=\"application/x-nzb\" />" +
+			"    <enclosure url=\"/indexer?t=fakenzb&amp;name=" + Release + "&amp;tidalid=" + album.Id + "&amp;numtracks=" + strconv.FormatInt(album.NumTracks, 10) + "&amp;apikey=" + ApiKey + "\" type=\"application/x-nzb\" />" +
 
 			"    <!-- Additional attributes -->" +
 			"    <newznab:attr name=\"category\" value=\"3000\"/>" +

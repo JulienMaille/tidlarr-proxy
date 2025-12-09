@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"fmt"
 	"github.com/cavaliergopher/grab/v3"
 	"github.com/tidwall/gjson"
@@ -55,6 +56,8 @@ func handleDownloaderRequest(w http.ResponseWriter, r *http.Request) {
 		get_config(w, *r.URL)
 	case "version":
 		version(w, *r.URL)
+	case "addurl":
+		addurl(w, *r.URL)
 	case "addfile":
 		addfile(w, r)
 	case "queue":
@@ -109,6 +112,25 @@ func version(w http.ResponseWriter, u url.URL) {
  	}`))
 }
 
+func addurl(w http.ResponseWriter, u url.URL) {
+	//Grab the URL Parameter from the URL
+	rawUrl, _ := url.QueryUnescape(u.Query().Get("name"))
+	parsedUrl, _ := url.Parse(rawUrl)
+	//Parse Name, ID and number of tracks
+	filename := parsedUrl.Query().Get("name")
+	Id := parsedUrl.Query().Get("tidalid")
+	NumTracks, _ := strconv.Atoi(parsedUrl.Query().Get("numtracks"))
+	generateDownload(filename, Id, NumTracks)
+	//send response using TidalId as nzo_id
+	w.Write([]byte("{\n" +
+		"\"status\": true,\n" +
+		"\"nzo_ids\": [\"SABnzbd_nzo_" + Id + "\"]\n" +
+		"}"))
+	if Downloads[Id].downloaded != -1 {
+		go startDownload(Id)
+	}
+}
+
 func addfile(w http.ResponseWriter, r *http.Request) {
 	//extract filename, TidalId and number of tracks
 	var body []byte = make([]byte, r.ContentLength)
@@ -144,12 +166,12 @@ func generateDownload(filename string, Id string, numTracks int) {
 	download.FileName = filename
 	download.downloaded = 0
 	download.hasLyrics = true
-	if strings.Contains(filename, "24BIT") {
+	if !strings.Contains(filename, "16BIT") || !strings.Contains(filename, "44-KHZ") {
 		download.hires = true
 	} else {
 		download.hires = false
 	}
-	var queryUrl string = "/album/" + Id
+	var queryUrl string = "/album?id=" + Id
 	bodyBytes, err := request(queryUrl)
 	if err != nil {
 		fmt.Println(err)
@@ -194,6 +216,10 @@ func generateDownload(filename string, Id string, numTracks int) {
 			return false
 		}
 		track.DownloadLink = gjson.Get(bodyBytes, "data.manifest").String()
+		if !download.hires {
+			manifest, _ := base64.StdEncoding.DecodeString(track.DownloadLink)
+			track.DownloadLink = gjson.Get(string(manifest), "urls.0").String()
+		}
 		download.Files = append(download.Files, track)
 		return true
 	})
@@ -326,13 +352,22 @@ func startDownload(Id string) {
 	//Download each track
 	for _, track := range download.Files {
 		var Name string = track.Index + " - " + download.Artist + " - " + track.Name + ".flac"
-		cmd := "echo \"" + track.DownloadLink + "\" | base64 -d | ffmpeg -protocol_whitelist file,http,https,tcp,tls,pipe -i pipe: -acodec copy \"" + Folder + Name + "\""
-		out, err := exec.Command("sh","-c",cmd).Output()
-		if err != nil {
-			fmt.Println("Download failed")
-			fmt.Println(cmd)
-			fmt.Println(err)
-			fmt.Println(out)
+		if download.hires {
+			cmd := "echo \"" + track.DownloadLink + "\" | base64 -d | ffmpeg -protocol_whitelist file,http,https,tcp,tls,pipe -i pipe: -acodec copy \"" + Folder + Name + "\""
+			out, err := exec.Command("sh","-c",cmd).Output()
+			if err != nil {
+				fmt.Println("Download failed")
+				fmt.Println(cmd)
+				fmt.Println(err)
+				fmt.Println(out)
+			}
+		} else {
+			_, err := grab.Get(Folder+Name, track.DownloadLink)
+			if err != nil {
+				fmt.Println("Failed to download track " + track.Name)
+				fmt.Println(err)
+				return
+			}
 		}
 		track.completed = true
 		download.downloaded += 1
