@@ -136,6 +136,11 @@ func search(w http.ResponseWriter, u url.URL) {
 	//doing the actual querying request
 	//getting the query parameters
 	var query string = url.QueryEscape(u.Query().Get("q"))
+	//Searching with no query, probably Prowlarr testing the indexer. Returning same garbage as with t=music
+	if query == "" {
+		music(w, u)
+		return
+	}
 	//Tidal API (sachinsenal0x64/hifi) doesn't support setting limit or offset as of right now. Just use the first and only 25 results
 	var queryUrl string = "/search/?al=" + query
 	response := buildSearchResponse(queryUrl)
