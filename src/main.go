@@ -15,7 +15,7 @@ import (
 var DownloadPath string
 var Category string
 var Port string
-var ApiLink = [...]string{"https://triton.squid.wtf", "https://tidal.kinoplus.online", "https://tidal-api.binimum.org", "https://tidal-api-2.binimum.org"}
+var ApiLink = [...]string{"https://triton.squid.wtf", "https://tidal.kinoplus.online", "https://tidal-api.binimum.org", "https://tidal-api-2.binimum.org", "https://hund.qqdl.site", "https://katze.qqdl.site", "https://maus.qqdl.site", "https://vogel.qqdl.site", "https://wolf.qqdl.site"}
 var ApiKey string
 
 func getEnv(key string, fallback string) string {
@@ -85,10 +85,13 @@ func main() {
 
 func request(query string) (string, error) {
 	var offset int = rand.Intn(len(ApiLink))
+	client := &http.Client{}
 	for tries := 0; tries < len(ApiLink)*3; tries++ {
 		link := ApiLink[(tries+offset)%len(ApiLink)]
 		fmt.Println("Trying URL " + link + query)
-		resp, err := http.Get(link + query)
+		req, _ := http.NewRequest("GET", link + query, nil)
+		req.Header.Add("X-Client", "tidlarr-proxy")
+		resp, err := client.Do(req)
 		if err != nil {
 			fmt.Println(err)
 			return "", err

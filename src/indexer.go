@@ -70,8 +70,8 @@ func caps(w http.ResponseWriter, u url.URL) {
         <search available="yes" supportedParams="q"/>
         <tv-search available="no" supportedParams=""/>
         <movie-search available="no" supportedParams=""/>
-        <audio-search available="yes" supportedParams="q,artist,album"/>
-        <music-search available="yes" supportedParams="q,artist,album"/>
+        <audio-search available="no" supportedParams=""/>
+        <music-search available="no" supportedParams=""/>
     </searching>
     <categories>
         <category id="3000" name="Audio">
