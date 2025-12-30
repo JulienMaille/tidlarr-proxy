@@ -2,10 +2,8 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
-	"github.com/cavaliergopher/grab/v3"
-	"github.com/tidwall/gjson"
-	"go.senan.xyz/taglib"
 	"io"
 	"net/http"
 	"net/url"
@@ -15,7 +13,38 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/cavaliergopher/grab/v3"
+	"github.com/tidwall/gjson"
+	"go.senan.xyz/taglib"
 )
+
+type ConfigMisc struct {
+	CompleteDir            string `json:"complete_dir"`
+	EnableTVSorting        bool   `json:"enable_tv_sorting"`
+	EnableMovieSorting     bool   `json:"enable_movie_sorting"`
+	PreCheck               bool   `json:"pre_check"`
+	HistoryRetention       string `json:"history_retention"`
+	HistoryRetentionOption string `json:"history_retention_option"`
+}
+
+type ConfigCategory struct {
+	Name     string `json:"name"`
+	Pp       string `json:"pp"`
+	Script   string `json:"script"`
+	Dir      string `json:"dir"`
+	Priority int    `json:"priority"`
+}
+
+type Config struct {
+	Misc       ConfigMisc       `json:"misc"`
+	Categories []ConfigCategory `json:"categories"`
+	Sorters    []interface{}    `json:"sorters"`
+}
+
+type ConfigResponse struct {
+	Config Config `json:"config"`
+}
 
 type File struct {
 	Id           int
@@ -83,28 +112,31 @@ func handleDownloaderRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func get_config(w http.ResponseWriter, u url.URL) {
-	w.Write([]byte(`{
-	    "config": {
-	        "misc": {
-	            "complete_dir": "` + DownloadPath + `/complete",
-	            "enable_tv_sorting": false,
-	            "enable_movie_sorting": false,
-	            "pre_check": false,
-	            "history_retention": "",
-	            "history_retention_option": "all"
-	        },
-	        "categories": [
-	            {
-	                "name": "music",
-	                "pp": "",
-	                "script": "Default",
-	                "dir": "` + DownloadPath + `/incomplete/music",
-	                "priority": -100
-	            },
-	        ],
-	        "sorters": []
-	    }
-	}`))
+	resp := ConfigResponse{
+		Config: Config{
+			Misc: ConfigMisc{
+				CompleteDir:            filepath.Join(DownloadPath, "complete"),
+				EnableTVSorting:        false,
+				EnableMovieSorting:     false,
+				PreCheck:               false,
+				HistoryRetention:       "",
+				HistoryRetentionOption: "all",
+			},
+			Categories: []ConfigCategory{
+				{
+					Name:     "music",
+					Pp:       "",
+					Script:   "Default",
+					Dir:      filepath.Join(DownloadPath, "incomplete", "music"),
+					Priority: -100,
+				},
+			},
+			Sorters: []interface{}{},
+		},
+	}
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		fmt.Println("Error encoding JSON:", err)
+	}
 }
 
 func version(w http.ResponseWriter, u url.URL) {
@@ -119,6 +151,7 @@ func addurl(w http.ResponseWriter, u url.URL) {
 	parsedUrl, _ := url.Parse(rawUrl)
 	//Parse Name, ID and number of tracks
 	filename := parsedUrl.Query().Get("name")
+	filename = sanitizeFilename(filename)
 	Id := parsedUrl.Query().Get("tidalid")
 	NumTracks, _ := strconv.Atoi(parsedUrl.Query().Get("numtracks"))
 	generateDownload(filename, Id, NumTracks)
@@ -134,9 +167,8 @@ func addurl(w http.ResponseWriter, u url.URL) {
 
 func addfile(w http.ResponseWriter, r *http.Request) {
 	//extract filename, TidalId and number of tracks
-	var body []byte = make([]byte, r.ContentLength)
-	_, err := r.Body.Read(body)
-	if err != nil && err != io.EOF {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
 		fmt.Println("/downloader/api/addfile Failed to read body:")
 		fmt.Println(err)
 	}
@@ -146,6 +178,7 @@ func addfile(w http.ResponseWriter, r *http.Request) {
 	var filename string = reName.FindString(lines[1])
 	filename = strings.Trim(filename, "filename=\"")
 	filename = strings.TrimRight(filename, ".nzb")
+	filename = sanitizeFilename(filename)
 	var Id = reNum.FindString(lines[6])
 	fmt.Println(filename)
 	var NumTracks, _ = strconv.Atoi(reNum.FindString(lines[7]))
@@ -229,11 +262,39 @@ func generateDownload(filename string, Id string, numTracks int) {
 	Downloads[Id] = &download
 }
 
+type QueueSlot struct {
+	Status       string   `json:"status"`
+	Index        int      `json:"index"`
+	Password     string   `json:"password"`
+	AvgAge       string   `json:"avg_age"`
+	Script       string   `json:"script"`
+	DirectUnpack string   `json:"direct_unpack"`
+	Mb           string   `json:"mb"`
+	MbLeft       string   `json:"mbleft"`
+	MbMissing    string   `json:"mbmissing"`
+	Size         string   `json:"size"`
+	SizeLeft     string   `json:"sizeleft"`
+	Filename     string   `json:"filename"`
+	Labels       []string `json:"labels"`
+	Priority     string   `json:"priority"`
+	Cat          string   `json:"cat"`
+	TimeLeft     string   `json:"timeleft"`
+	Percentage   string   `json:"percentage"`
+	NzoId        string   `json:"nzo_id"`
+	UnpackOpts   string   `json:"unpackopts"`
+}
+
+type Queue struct {
+	Paused bool        `json:"paused"`
+	Slots  []QueueSlot `json:"slots"`
+}
+
+type QueueResponse struct {
+	Queue Queue `json:"queue"`
+}
+
 func queue(w http.ResponseWriter, r *http.Request) {
-	var response string = "{\n" +
-		"	\"queue\": {\n" +
-		"		\"paused\": false,\n" +
-		"		\"slots\": ["
+	slots := []QueueSlot{}
 
 	//fill slots with current download queue
 	var index int = 0
@@ -247,35 +308,58 @@ func queue(w http.ResponseWriter, r *http.Request) {
 		timeleft := (download.numTracks - download.downloaded) * 10
 		//Guessing progress based on how many tracks are left, not based on file size
 		progress := (int((float64(download.downloaded) / float64(download.numTracks)) * 100))
-		response += "\n{\n" +
-			"			\"status\": \"Downloading\",\n" +
-			"			\"index\": " + strconv.Itoa(index) + ",\n" +
-			//mostly answering the same garbage, hope Lidarr doesn't pay attention...
-			"			\"password\": \"\",\n" +
-			"			\"avg_age\": \"2895d\",\n" +
-			"			\"script\": \"None\",\n" +
-			"			\"direct_unpack\": \"30/30\",\n" +
-			//claiming every download is 100mb so mbleft is just 100-progress
-			"			\"mb\": \"" + "100" + "\",\n" +
-			"			\"mbleft\": \"" + strconv.Itoa(100-progress) + "\",\n" +
-			"			\"mbmissing\": \"0.0\",\n" +
-			"			\"size\": \"100 MB\",\n" +
-			"			\"sizeleft\": \"" + strconv.Itoa(100-progress) + " MB\",\n" +
-			"			\"filename\": \"" + download.FileName + "\",\n" +
-			"			\"labels\": [],\n" +
-			"			\"priority\": \"Normal\",\n" +
-			"			\"cat\": \"" + Category + "\",\n" +
-			"			\"timeleft\": \"0:" + strconv.Itoa(timeleft/60) + ":" + strconv.Itoa(timeleft%60) + "\",\n" +
-			"			\"percentage\": \"" + strconv.Itoa(progress) + "\",\n" +
-			"			\"nzo_id\": \"SABnzbd_nzo_" + download.Id + "\",\n" +
-			"			\"unpackopts\": \"3\"\n" +
-			"},\n"
+
+		slots = append(slots, QueueSlot{
+			Status:       "Downloading",
+			Index:        index,
+			Password:     "",
+			AvgAge:       "2895d",
+			Script:       "None",
+			DirectUnpack: "30/30",
+			Mb:           "100",
+			MbLeft:       strconv.Itoa(100 - progress),
+			MbMissing:    "0.0",
+			Size:         "100 MB",
+			SizeLeft:     strconv.Itoa(100-progress) + " MB",
+			Filename:     download.FileName,
+			Labels:       []string{},
+			Priority:     "Normal",
+			Cat:          Category,
+			TimeLeft:     "0:" + strconv.Itoa(timeleft/60) + ":" + strconv.Itoa(timeleft%60),
+			Percentage:   strconv.Itoa(progress),
+			NzoId:        "SABnzbd_nzo_" + download.Id,
+			UnpackOpts:   "3",
+		})
+		index++
 	}
 
-	response += "]\n" +
-		"	}\n" +
-		"}"
-	w.Write([]byte(response))
+	if err := json.NewEncoder(w).Encode(QueueResponse{
+		Queue: Queue{
+			Paused: false,
+			Slots:  slots,
+		},
+	}); err != nil {
+		fmt.Println("Error encoding JSON:", err)
+	}
+}
+
+type HistorySlot struct {
+	Name         string `json:"name"`
+	NzbName      string `json:"nzb_name"`
+	Category     string `json:"category"`
+	Bytes        int64  `json:"bytes"`
+	DownloadTime int    `json:"download_time"`
+	Status       string `json:"status"`
+	Storage      string `json:"storage"`
+	NzoId        string `json:"nzo_id"`
+}
+
+type History struct {
+	Slots []HistorySlot `json:"slots"`
+}
+
+type HistoryResponse struct {
+	History History `json:"history"`
 }
 
 func history(w http.ResponseWriter, r *http.Request) {
@@ -292,9 +376,8 @@ func history(w http.ResponseWriter, r *http.Request) {
 		}
 		delete(Downloads, id)
 	}
-	var response string = `{
-	    "history": {
-	        "slots": [`
+
+	slots := []HistorySlot{}
 	//fill this with completed history
 	for id := range Downloads {
 		var download Download = *Downloads[id]
@@ -317,22 +400,32 @@ func history(w http.ResponseWriter, r *http.Request) {
 		} else {
 			status = "Completed"
 		}
-		response += "\n{\n" +
-			"\"name\": \"" + download.FileName + "\", \n" +
-			"\"nzb_name\": \"" + download.FileName + ".nzb\",\n" +
-			"\"category\": \"" + Category + "\",\n" +
-			"\"bytes\": " + strconv.FormatInt(fileSize, 10) + ",\n" +
-			//same estimate of 10 seconds per track, could measure time in the future
-			"\"download_time\": " + strconv.Itoa(download.numTracks*30) + ",\n" +
-			"\"status\": \"" + status + "\",\n" +
-			"\"storage\": \"" + DownloadPath + "/complete/" + Category + "/" + download.FileName + "\",\n" +
-			"\"nzo_id\": \"SABnzbd_nzo_" + download.Id + "\"\n" +
-			"},"
+
+		slots = append(slots, HistorySlot{
+			Name:         download.FileName,
+			NzbName:      download.FileName + ".nzb",
+			Category:     Category,
+			Bytes:        fileSize,
+			DownloadTime: download.numTracks * 30,
+			Status:       status,
+			Storage:      filepath.Join(DownloadPath, "complete", Category, download.FileName),
+			NzoId:        "SABnzbd_nzo_" + download.Id,
+		})
 	}
-	response += `]
-	    }
-	}`
-	w.Write([]byte(response))
+
+	if err := json.NewEncoder(w).Encode(HistoryResponse{
+		History: History{
+			Slots: slots,
+		},
+	}); err != nil {
+		fmt.Println("Error encoding JSON:", err)
+	}
+}
+
+func sanitizeFilename(name string) string {
+	// Forbidden characters on Windows: < > : " / \ | ? *
+	re := regexp.MustCompile(`[<>:"/\\|?*]`)
+	return re.ReplaceAllString(name, "_")
 }
 
 func startDownload(Id string) {
@@ -354,7 +447,7 @@ func startDownload(Id string) {
 	}
 	//Download each track
 	for _, track := range download.Files {
-		var Name string = track.Index + " - " + download.Artist + " - " + track.Name + FileExtension
+		var Name string = sanitizeFilename(track.Index+" - "+download.Artist+" - "+track.Name) + FileExtension
 		if download.hires {
 			targetPath := filepath.Join(Folder, Name)
 			cmd := "echo \"" + track.DownloadLink + "\" | base64 -d | ffmpeg -protocol_whitelist file,http,https,tcp,tls,pipe -i pipe: -acodec copy \"" + targetPath + "\""
