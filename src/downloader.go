@@ -200,11 +200,8 @@ func generateDownload(filename string, Id string, numTracks int) {
 	download.FileName = filename
 	download.downloaded = 0
 	download.hasLyrics = true
-	if !strings.Contains(filename, "16BIT") || !strings.Contains(filename, "44-KHZ") {
-		download.hires = true
-	} else {
-		download.hires = false
-	}
+	download.hires = false
+
 	var queryUrl string = "/album?id=" + Id
 	bodyBytes, err := request(queryUrl)
 	if err != nil {
@@ -241,11 +238,8 @@ func generateDownload(filename string, Id string, numTracks int) {
 		track.isrc = gjson.Get(valueString, "item.isrc").String()
 		track.completed = false
 		var queryUrl string = "/track/?id=" + strconv.Itoa(track.Id)
-		if download.hires == false {
-			// Respect global Quality Preference if AAC is requested (QualityId="HIGH")?
-			// QualityId maps to "HIGH" (AAC 320) or "LOSSLESS" (FLAC 16bit) in main.go
-			queryUrl += "&quality=" + QualityId
-		}
+		queryUrl += "&quality=" + QualityId
+
 		bodyBytes, err := request(queryUrl)
 		if err != nil {
 			fmt.Println(err)
