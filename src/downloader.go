@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -70,7 +69,6 @@ type Download struct {
 	FileName   string
 	Files      []File
 	hasLyrics  bool
-	hires      bool
 }
 
 var Downloads map[string]*Download = make(map[string]*Download)
@@ -200,7 +198,6 @@ func generateDownload(filename string, Id string, numTracks int) {
 	download.FileName = filename
 	download.downloaded = 0
 	download.hasLyrics = true
-	download.hires = false
 
 	var queryUrl string = "/album?id=" + Id
 	bodyBytes, err := request(queryUrl)
@@ -246,10 +243,8 @@ func generateDownload(filename string, Id string, numTracks int) {
 			return false
 		}
 		track.DownloadLink = gjson.Get(bodyBytes, "data.manifest").String()
-		if !download.hires {
-			manifest, _ := base64.StdEncoding.DecodeString(track.DownloadLink)
-			track.DownloadLink = gjson.Get(string(manifest), "urls.0").String()
-		}
+		manifest, _ := base64.StdEncoding.DecodeString(track.DownloadLink)
+		track.DownloadLink = gjson.Get(string(manifest), "urls.0").String()
 		download.Files = append(download.Files, track)
 		return true
 	})
@@ -448,24 +443,13 @@ func startDownload(Id string) {
 	//Download each track
 	for _, track := range download.Files {
 		var Name string = sanitizeFilename(track.Index+" - "+download.Artist+" - "+track.Name) + FileExtension
-		if download.hires {
-			targetPath := filepath.Join(Folder, Name)
-			cmd := "echo \"" + track.DownloadLink + "\" | base64 -d | ffmpeg -protocol_whitelist file,http,https,tcp,tls,pipe -i pipe: -acodec copy \"" + targetPath + "\""
-			out, err := exec.Command("sh", "-c", cmd).Output()
-			if err != nil {
-				fmt.Println("Download failed")
-				fmt.Println(cmd)
-				fmt.Println(err)
-				fmt.Println(out)
-			}
-		} else {
-			_, err := grab.Get(filepath.Join(Folder, Name), track.DownloadLink)
-			if err != nil {
-				fmt.Println("Failed to download track " + track.Name)
-				fmt.Println(err)
-				return
-			}
+		_, err := grab.Get(filepath.Join(Folder, Name), track.DownloadLink)
+		if err != nil {
+			fmt.Println("Failed to download track " + track.Name)
+			fmt.Println(err)
+			return
 		}
+
 		track.completed = true
 		download.downloaded += 1
 		writeMetaData(*download, track, filepath.Join(Folder, Name))
