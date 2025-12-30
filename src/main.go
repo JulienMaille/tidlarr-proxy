@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +18,8 @@ var Category string
 var Port string
 var ApiLink = [...]string{"https://triton.squid.wtf", "https://tidal.kinoplus.online", "https://tidal-api.binimum.org", "https://hund.qqdl.site", "https://katze.qqdl.site", "https://maus.qqdl.site", "https://vogel.qqdl.site", "https://wolf.qqdl.site"}
 var ApiKey string
+var QualityId string
+var FileExtension string
 
 func getEnv(key string, fallback string) string {
 	value := os.Getenv(key)
@@ -32,15 +35,24 @@ func main() {
 	Port = getEnv("PORT", "8688")
 	ApiKey = getEnv("API_KEY", "")
 
+	quality := getEnv("QUALITY", "flac")
+	if quality == "aac-320" {
+		QualityId = "HIGH"
+		FileExtension = ".m4a"
+	} else {
+		QualityId = "LOSSLESS" // or HI_RES
+		FileExtension = ".flac"
+	}
+
 	//create folders if they don't exist yet
 	os.Mkdir(DownloadPath, 0775)
-	os.Mkdir(DownloadPath+"/incomplete", 0775)
-	os.Mkdir(DownloadPath+"/incomplete/"+Category, 0775)
-	os.Mkdir(DownloadPath+"/complete", 0775)
-	os.Mkdir(DownloadPath+"/complete/"+Category, 0775)
+	os.Mkdir(filepath.Join(DownloadPath, "incomplete"), 0775)
+	os.Mkdir(filepath.Join(DownloadPath, "incomplete", Category), 0775)
+	os.Mkdir(filepath.Join(DownloadPath, "complete"), 0775)
+	os.Mkdir(filepath.Join(DownloadPath, "complete", Category), 0775)
 
 	//and now clear anything in /incomplete that was created by tidlarr. Likely a leftover failed download
-	folders, err := os.ReadDir(DownloadPath + "/incomplete/" + Category)
+	folders, err := os.ReadDir(filepath.Join(DownloadPath, "incomplete", Category))
 	if err != nil {
 		fmt.Println("Couldn't read incomplete folder: ")
 		fmt.Println(err)
@@ -48,7 +60,7 @@ func main() {
 	for _, folder := range folders {
 		if strings.Contains(folder.Name(), "-TIDLARR") {
 			fmt.Println("Removing incomplete download " + folder.Name())
-			err := os.RemoveAll(DownloadPath + "/incomplete/" + Category + "/" + folder.Name())
+			err := os.RemoveAll(filepath.Join(DownloadPath, "incomplete", Category, folder.Name()))
 			if err != nil {
 				fmt.Println("Failed to remove folder!")
 				fmt.Println(err)
@@ -58,7 +70,7 @@ func main() {
 
 	// Generate a basic list of downloads from folders in /complete. likely from completed downloads that weren't imported before reboot.
 	// Adding these to the downloads list allows importing/deleting from Lidarr
-	folders, _ = os.ReadDir(DownloadPath + "/complete/" + Category)
+	folders, _ = os.ReadDir(filepath.Join(DownloadPath, "complete", Category))
 	for _, folder := range folders {
 		if strings.Contains(folder.Name(), "-TIDLARR") {
 			fmt.Println("Adding completed download " + folder.Name() + " to history")

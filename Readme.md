@@ -6,6 +6,9 @@ Complete your Lidarr library by downloading from Tidal via squid.wtf
 
 Use the included [docker-compose](docker-compose.yml) as reference for creating your container.
 
+### Windows (No Docker)
+See [WINDOWS_SETUP.md](WINDOWS_SETUP.md) for instructions on how to run this on Windows without Docker.
+
 Within Lidarr, set up a new Newznab indexer with the following settings:
 1. Disable RSS
 2. Set the URL to the IP/Hostname of your tidlarr-proxy container, but make sure it begins with http:// and ends with your configured port (8688 by default)
