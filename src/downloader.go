@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -208,7 +209,9 @@ func generateDownload(filename string, Id string, numTracks int) {
 		track.completed = false
 		var queryUrl string = "/track/?id=" + strconv.Itoa(track.Id)
 		if download.hires == false {
-			queryUrl += "&quality=LOSSLESS"
+			// Respect global Quality Preference if AAC is requested (QualityId="HIGH")?
+			// QualityId maps to "HIGH" (AAC 320) or "LOSSLESS" (FLAC 16bit) in main.go
+			queryUrl += "&quality=" + QualityId
 		}
 		bodyBytes, err := request(queryUrl)
 		if err != nil {
@@ -281,7 +284,7 @@ func history(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("name") == "delete" {
 		var id, _ = strings.CutPrefix(r.URL.Query().Get("value"), "SABnzbd_nzo_")
 		if r.URL.Query().Get("del_files") == "1" {
-			err := os.RemoveAll(DownloadPath + "/complete/" + Category + "/" + Downloads[id].FileName)
+			err := os.RemoveAll(filepath.Join(DownloadPath, "complete", Category, Downloads[id].FileName))
 			if err != nil {
 				fmt.Println("Couldn't delete folder " + Downloads[id].FileName)
 				fmt.Println(err)
@@ -300,7 +303,7 @@ func history(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		// Get the fileinfo
-		fileInfo, err := os.Stat(DownloadPath + "/complete/" + Category + "/" + download.FileName)
+		fileInfo, err := os.Stat(filepath.Join(DownloadPath, "complete", Category, download.FileName))
 		var fileSize int64
 		if err != nil {
 			//cant get file stats on Docker for some reason? giving arbitrary size info
@@ -335,15 +338,15 @@ func history(w http.ResponseWriter, r *http.Request) {
 func startDownload(Id string) {
 	download := Downloads[Id]
 	//create folder
-	var Folder string = DownloadPath + "/incomplete/" + Category + "/" + download.FileName + "/"
+	var Folder string = filepath.Join(DownloadPath, "incomplete", Category, download.FileName)
 	err := os.Mkdir(Folder, 0755)
 	if err != nil {
-		fmt.Println("Couldn't create folder in " + DownloadPath + "/incomplete/" + Category)
+		fmt.Println("Couldn't create folder in " + filepath.Join(DownloadPath, "incomplete", Category))
 		fmt.Println(err)
 		return
 	}
 	//Download cover art
-	_, err = grab.Get(Folder+"cover.jpg", download.CoverUrl)
+	_, err = grab.Get(filepath.Join(Folder, "cover.jpg"), download.CoverUrl)
 	if err != nil {
 		fmt.Println("Failed to download cover")
 		fmt.Println(err)
@@ -351,10 +354,11 @@ func startDownload(Id string) {
 	}
 	//Download each track
 	for _, track := range download.Files {
-		var Name string = track.Index + " - " + download.Artist + " - " + track.Name + ".flac"
+		var Name string = track.Index + " - " + download.Artist + " - " + track.Name + FileExtension
 		if download.hires {
-			cmd := "echo \"" + track.DownloadLink + "\" | base64 -d | ffmpeg -protocol_whitelist file,http,https,tcp,tls,pipe -i pipe: -acodec copy \"" + Folder + Name + "\""
-			out, err := exec.Command("sh","-c",cmd).Output()
+			targetPath := filepath.Join(Folder, Name)
+			cmd := "echo \"" + track.DownloadLink + "\" | base64 -d | ffmpeg -protocol_whitelist file,http,https,tcp,tls,pipe -i pipe: -acodec copy \"" + targetPath + "\""
+			out, err := exec.Command("sh", "-c", cmd).Output()
 			if err != nil {
 				fmt.Println("Download failed")
 				fmt.Println(cmd)
@@ -362,7 +366,7 @@ func startDownload(Id string) {
 				fmt.Println(out)
 			}
 		} else {
-			_, err := grab.Get(Folder+Name, track.DownloadLink)
+			_, err := grab.Get(filepath.Join(Folder, Name), track.DownloadLink)
 			if err != nil {
 				fmt.Println("Failed to download track " + track.Name)
 				fmt.Println(err)
@@ -371,10 +375,10 @@ func startDownload(Id string) {
 		}
 		track.completed = true
 		download.downloaded += 1
-		writeMetaData(*download, track, Folder+Name)
+		writeMetaData(*download, track, filepath.Join(Folder, Name))
 	}
 	//Download (should be) complete, move to complete folder
-	os.Rename(Folder, DownloadPath+"/complete/"+Category+"/"+download.FileName)
+	os.Rename(Folder, filepath.Join(DownloadPath, "complete", Category, download.FileName))
 }
 
 func writeMetaData(album Download, track File, fileName string) {

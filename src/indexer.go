@@ -1,15 +1,16 @@
 package main
 
 import (
+	"encoding/xml"
 	"fmt"
-	"github.com/tidwall/gjson"
 	"io"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/tidwall/gjson"
 )
 
 type Album struct {
@@ -86,50 +87,107 @@ func caps(w http.ResponseWriter, u url.URL) {
 	`))
 }
 
+type Rss struct {
+	XMLName string  `xml:"rss"`
+	Version string  `xml:"version,attr"`
+	Newznab string  `xml:"xmlns:newznab,attr"`
+	Channel Channel `xml:"channel"`
+}
+
+type Channel struct {
+	Title           string          `xml:"title"`
+	Description     string          `xml:"description"`
+	NewznabResponse NewznabResponse `xml:"newznab:response"`
+	Items           []Item          `xml:"item"`
+}
+
+type NewznabResponse struct {
+	Offset int `xml:"offset,attr"`
+	Total  int `xml:"total,attr"`
+}
+
+type Item struct {
+	Title       string        `xml:"title"`
+	Guid        Guid          `xml:"guid"`
+	Link        string        `xml:"link"`
+	Comments    string        `xml:"comments"`
+	PubDate     string        `xml:"pubDate"`
+	Category    string        `xml:"category"`
+	Description string        `xml:"description"`
+	Enclosure   Enclosure     `xml:"enclosure"`
+	Attrs       []NewznabAttr `xml:"newznab:attr"`
+}
+
+type Guid struct {
+	IsPermaLink bool   `xml:"isPermaLink,attr"`
+	Value       string `xml:",chardata"`
+}
+
+type Enclosure struct {
+	Url    string `xml:"url,attr"`
+	Length int64  `xml:"length,attr"`
+	Type   string `xml:"type,attr"`
+}
+
+type NewznabAttr struct {
+	Name  string `xml:"name,attr"`
+	Value string `xml:"value,attr"`
+}
+
 func music(w http.ResponseWriter, u url.URL) {
 	if u.Query().Get("q") == "" && u.Query().Get("artist") == "" && u.Query().Get("album") == "" {
 		fmt.Println("searching with no query, responding garbage...")
-		w.Write([]byte(
-			`<?xml version="1.0" encoding="UTF-8"?>
-<rss xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/" version="2.0">
-  <channel>
-    <title>example.com</title>
-    <description>example.com API results</description>
-    <newznab:response offset="0" total="1234"/>
-
-    <item>
-      <!-- Standard RSS 2.0 data -->
-      <title>A.Public.Domain.Album.Name</title>
-      <guid isPermaLink="true">http://servername.com/rss/viewnzb/e9c515e02346086e3a477a5436d7bc8c</guid>
-      <link>http://servername.com/rss/nzb/e9c515e02346086e3a477a5436d7bc8c&amp;i=1&amp;r=18cf9f0a736041465e3bd521d00a90b9</link>
-      <comments>http://servername.com/rss/viewnzb/e9c515e02346086e3a477a5436d7bc8c#comments</comments>
-      <pubDate>Sun, 06 Jun 2010 17:29:23 +0100</pubDate>
-      <category>Music > MP3</category>
-      <description>Some music</description>
-      <enclosure url="http://servername.com/rss/nzb/e9c515e02346086e3a477a5436d7bc8c&amp;i=1&amp;r=18cf9f0a736041465e3bd521d00a90b9" length="154653309" type="application/x-nzb" />
-
-      <!-- Additional attributes -->
-      <newznab:attr name="category" value="3000" />
-      <newznab:attr name="category" value="3010" />
-      <newznab:attr name="size"     value="144967295" />
-      <newznab:attr name="artist"   value="Bob Smith" />
-      <newznab:attr name="album"    value="Groovy Tunes" />
-      <newznab:attr name="publisher" value="Epic Music" />
-      <newznab:attr name="year"     value="2011" />
-      <newznab:attr name="tracks"   value="track one|track two|track three" />
-      <newznab:attr name="coverurl" value="http://servername.com/covers/music/12345.jpg" />
-      <newznab:attr name="review"   value="This album is great" />
-    </item>
-
-  </channel>
-</rss>
-		`))
+		rss := Rss{
+			Version: "2.0",
+			Newznab: "http://www.newznab.com/DTD/2010/feeds/attributes/",
+			Channel: Channel{
+				Title:       "example.com",
+				Description: "example.com API results",
+				NewznabResponse: NewznabResponse{
+					Offset: 0,
+					Total:  1234,
+				},
+				Items: []Item{
+					{
+						Title: "A.Public.Domain.Album.Name",
+						Guid: Guid{
+							IsPermaLink: true,
+							Value:       "http://servername.com/rss/viewnzb/e9c515e02346086e3a477a5436d7bc8c",
+						},
+						Link:        "http://servername.com/rss/nzb/e9c515e02346086e3a477a5436d7bc8c&i=1&r=18cf9f0a736041465e3bd521d00a90b9",
+						Comments:    "http://servername.com/rss/viewnzb/e9c515e02346086e3a477a5436d7bc8c#comments",
+						PubDate:     "Sun, 06 Jun 2010 17:29:23 +0100",
+						Category:    "Music > MP3",
+						Description: "Some music",
+						Enclosure: Enclosure{
+							Url:    "http://servername.com/rss/nzb/e9c515e02346086e3a477a5436d7bc8c&i=1&r=18cf9f0a736041465e3bd521d00a90b9",
+							Length: 154653309,
+							Type:   "application/x-nzb",
+						},
+						Attrs: []NewznabAttr{
+							{Name: "category", Value: "3000"},
+							{Name: "category", Value: "3010"},
+							{Name: "size", Value: "144967295"},
+							{Name: "artist", Value: "Bob Smith"},
+							{Name: "album", Value: "Groovy Tunes"},
+							{Name: "publisher", Value: "Epic Music"},
+							{Name: "year", Value: "2011"},
+							{Name: "tracks", Value: "track one|track two|track three"},
+							{Name: "coverurl", Value: "http://servername.com/covers/music/12345.jpg"},
+							{Name: "review", Value: "This album is great"},
+						},
+					},
+				},
+			},
+		}
+		w.Write([]byte(xml.Header))
+		xml.NewEncoder(w).Encode(rss)
 		return
 	}
 	var queryUrl string = "/search/?al=" + url.QueryEscape(u.Query().Get("artist")) + "+" + url.QueryEscape(u.Query().Get("album"))
 	queryUrl = strings.Replace(queryUrl, " ", "+", -1)
-	response := buildSearchResponse(queryUrl)
-	w.Write([]byte(response))
+	
+	respondWithSearch(w, queryUrl)
 }
 
 func search(w http.ResponseWriter, u url.URL) {
@@ -143,21 +201,34 @@ func search(w http.ResponseWriter, u url.URL) {
 	}
 	//Tidal API (sachinsenal0x64/hifi) doesn't support setting limit or offset as of right now. Just use the first and only 25 results
 	var queryUrl string = "/search/?al=" + query
-	response := buildSearchResponse(queryUrl)
-	w.Write([]byte(response))
+	respondWithSearch(w, queryUrl)
+}
+
+func respondWithSearch(w http.ResponseWriter, queryUrl string) {
+	rss, err := buildSearchResponse(queryUrl)
+	if err != nil {
+		// Log error, maybe return empty RSS?
+		fmt.Println("Error building search response:", err)
+		return
+	}
+	w.Write([]byte(xml.Header))
+	xml.NewEncoder(w).Encode(rss)
 }
 
 func releaseName(album Album) (name string) {
 	release := album.ReleaseDate[0:4]
-	name = album.Artist + "-" + album.Title + "-" + strconv.FormatInt(album.BitDepth, 10) + "BIT-" + strconv.FormatInt(album.SamplingRate, 10) + "-KHZ-WEB-FLAC-" + release + "-TIDLARR"
+	if QualityId == "HIGH" {
+		name = album.Artist + "-" + album.Title + "-WEB-320-AAC-" + release + "-TIDLARR"
+	} else {
+		name = album.Artist + "-" + album.Title + "-" + strconv.FormatInt(album.BitDepth, 10) + "BIT-" + strconv.FormatInt(album.SamplingRate, 10) + "-KHZ-WEB-FLAC-" + release + "-TIDLARR"
+	}
 	return name
 }
 
-func buildSearchResponse(queryUrl string) string {
+func buildSearchResponse(queryUrl string) (*Rss, error) {
 	bodyBytes, err := request(queryUrl)
 	if err != nil {
-		fmt.Println(err)
-		return ""
+		return nil, err
 	}
 	var Albums []Album
 	//iterate over each album and create an Album struct object from it
@@ -178,10 +249,15 @@ func buildSearchResponse(queryUrl string) string {
 		album.SamplingRate = 44
 		album.BitDepth = 16
 		album.Duration = gjson.Get(resultString, "duration").Int()
-		//guesstimate filesize based on Sampling Rate, Bit Depth, Channel count and duration
-		//assuming all tracks of that album have the same specifications and that FLAC is 70% as large as WAV
-		// (Sampling Rate in Hz * Bit depth * channels * seconds) / 8 to get it from bits to bytes
-		album.Size = int64(float64(((album.SamplingRate * 1000) * (album.BitDepth * album.Channels * album.Duration) / 8)) * 0.7)
+		
+		if QualityId == "HIGH" {
+			// AAC 320kbps estimate
+			album.Size = int64(320 * 1000 * album.Duration / 8)
+		} else {
+			// FLAC (default)
+			album.Size = int64(float64(((album.SamplingRate * 1000) * (album.BitDepth * album.Channels * album.Duration) / 8)) * 0.7)
+		}
+		
 		Albums = append(Albums, album)
 
 		if (gjson.Get(resultString, "mediaMetadata.tags.#(%\"HIRES_LOSSLESS\")").Exists()) {
@@ -212,48 +288,66 @@ func buildSearchResponse(queryUrl string) string {
 		}
 		return true // keep iterating
 	})
-	//Create XML Response
-	var response string = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
-		"<rss xmlns:newznab=\"http://www.newznab.com/DTD/2010/feeds/attributes/\" version=\"2.0\">\n" +
-		"<channel>\n" +
-		"<title>example.com</title>\n" +
-		"<description>example.com API results</description>\n" +
-		"<newznab:apilimits apicurrent=\"123\" apimax=\"500\" grabcurrent=\"69\" grabmax=\"250\" apioldesttime=\"Wed, 17 Jul 2019 23:00:49 +0100\" graboldesttime=\"Thu, 18 Jul 2019 04:44:44 +0100\" />\n" +
-		"    <newznab:response offset=\"0\" total=\"" + strconv.Itoa(len(Albums)) + "\"/>`)\n"
 
-	//iterate over each album and create <item> parts of response
+	items := []Item{}
 	for _, album := range Albums {
-		//some basic sanitation of artist and title
-		reg := regexp.MustCompile(`[^\p{L}\p{N} ]+`)
-		album.Title = reg.ReplaceAllString(album.Title, "")
-		album.Artist = reg.ReplaceAllString(album.Artist, "")
+		// Removed regex sanitization of album.Title and album.Artist
+		
 		timestamp, _ := time.Parse("2006-01-02", album.ReleaseDate)
-
 		Release := releaseName(album)
 
-		response += "<item>" +
-			"    <!-- Standard RSS 2.0 Data -->" +
-			"    <title>" + Release + "</title>" +
-			"    <guid isPermaLink=\"true\">http://www.tidal.com/album?id=" + album.Id + "</guid>" +
-			"    <link>http://www.tidal.com/album/" + album.Id + "</link>" +
-			"    <comments>http://www.tidal.com/album/" + album.Id + "#comments</comments>" +
-			"    <pubDate>" + timestamp.Format("Mon, 02 Jan 2006 15:04:05 -0700") + "</pubDate>" +
-			"    <category>Audio > Lossless</category>" +
-			"    <description>" + album.Artist + " " + album.Title + "</description>" +
-			"    <enclosure url=\"/indexer?t=fakenzb&amp;name=" + Release + "&amp;tidalid=" + album.Id + "&amp;numtracks=" + strconv.FormatInt(album.NumTracks, 10) + "&amp;apikey=" + ApiKey + "\" type=\"application/x-nzb\" />" +
+		var categoryName string
+		var categoryAttrs []NewznabAttr
 
-			"    <!-- Additional attributes -->" +
-			"    <newznab:attr name=\"category\" value=\"3000\"/>" +
-			"    <newznab:attr name=\"category\" value=\"3040\"/>" +
-			"    <newznab:attr name=\"size\"     value=\"" + strconv.FormatInt(album.Size, 10) + "\"/>" +
-			"    </item>"
+		if QualityId == "HIGH" {
+			// AAC 320
+			categoryName = "Audio > MP3"
+			categoryAttrs = []NewznabAttr{
+				{Name: "category", Value: "3000"},
+				{Name: "category", Value: "3010"},
+				{Name: "size", Value: strconv.FormatInt(album.Size, 10)},
+			}
+		} else {
+			// FLAC / Lossless (default)
+			categoryName = "Audio > Lossless"
+			categoryAttrs = []NewznabAttr{
+				{Name: "category", Value: "3000"},
+				{Name: "category", Value: "3040"},
+				{Name: "size", Value: strconv.FormatInt(album.Size, 10)},
+			}
+		}
+
+		items = append(items, Item{
+			Title: Release,
+			Guid: Guid{IsPermaLink: true, Value: "http://www.tidal.com/album?id=" + album.Id},
+			Link: "http://www.tidal.com/album/" + album.Id,
+			Comments: "http://www.tidal.com/album/" + album.Id + "#comments",
+			PubDate: timestamp.Format("Mon, 02 Jan 2006 15:04:05 -0700"),
+			Category: categoryName,
+			Description: album.Artist + " " + album.Title,
+			Enclosure: Enclosure{
+				Url: "/indexer?t=fakenzb&name=" + url.QueryEscape(Release) + "&tidalid=" + album.Id + "&numtracks=" + strconv.FormatInt(album.NumTracks, 10) + "&apikey=" + ApiKey,
+				Type: "application/x-nzb",
+			},
+			Attrs: categoryAttrs,
+		})
 	}
 
-	//write the end of the response
-	response += "</channel>\n" +
-		"</rss>"
+	rss := Rss{
+		Version: "2.0",
+		Newznab: "http://www.newznab.com/DTD/2010/feeds/attributes/",
+		Channel: Channel{
+			Title:       "example.com",
+			Description: "example.com API results",
+			NewznabResponse: NewznabResponse{
+				Offset: 0,
+				Total:  len(Albums),
+			},
+			Items: items,
+		},
+	}
 
-	return response
+	return &rss, nil
 }
 
 func fakenzb(w http.ResponseWriter, u url.URL) {
