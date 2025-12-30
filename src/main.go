@@ -100,7 +100,7 @@ func request(query string) (string, error) {
 	client := &http.Client{}
 	for tries := 0; tries < len(ApiLink)*3; tries++ {
 		link := ApiLink[(tries+offset)%len(ApiLink)]
-		fmt.Println("Trying URL " + link + query)
+		//fmt.Println("Trying URL " + link + query)
 		req, _ := http.NewRequest("GET", link + query, nil)
 		req.Header.Add("X-Client", "tidlarr-proxy")
 		resp, err := client.Do(req)

@@ -260,32 +260,6 @@ func buildSearchResponse(queryUrl string) (*Rss, error) {
 		
 		Albums = append(Albums, album)
 
-		if (gjson.Get(resultString, "mediaMetadata.tags.#(%\"HIRES_LOSSLESS\")").Exists()) {
-			fmt.Println("Found HiRes for Album " + album.Title)
-			hiresAlbum := album
-			var albumQueryUrl string = "/album?id=" + album.Id
-			albumBytes, err := request(albumQueryUrl)
-			if err != nil {
-				fmt.Println(err)
-			}
-			var trackId string = gjson.Get(albumBytes, "data.items.1.item.id").String()
-			fmt.Println("Looking up info on track " + trackId)
-			var trackQueryUrl string = "/track/?id=" + trackId + "&quality=HI_RES_LOSSLESS"
-			trackBytes, err := request(trackQueryUrl)
-			if err != nil {
-				fmt.Println(err)
-			}
-			hiresAlbum.SamplingRate = gjson.Get(trackBytes, "data.sampleRate").Int()/1000
-			//We don't actually know this until we download it, but the chance it's >16 is pretty high
-			hiresAlbum.BitDepth = gjson.Get(trackBytes, "data.bitDepth").Int()
-
-			//recalculate size based on new bit depth and sample rate
-			hiresAlbum.Size = int64(float64(((hiresAlbum.SamplingRate * 1000) * (hiresAlbum.BitDepth * hiresAlbum.Channels * hiresAlbum.Duration) / 8)) * 0.7)
-
-			//differentiate hires release from regular release
-			hiresAlbum.Id += "%hires"
-			Albums = append(Albums, hiresAlbum)
-		}
 		return true // keep iterating
 	})
 
