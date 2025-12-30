@@ -101,13 +101,19 @@ func request(query string) (string, error) {
 	for tries := 0; tries < len(ApiLink)*3; tries++ {
 		link := ApiLink[(tries+offset)%len(ApiLink)]
 		//fmt.Println("Trying URL " + link + query)
-		req, _ := http.NewRequest("GET", link + query, nil)
+		req, err := http.NewRequest("GET", link+query, nil)
+		if err != nil {
+			fmt.Println("Error creating request for " + link + query)
+			fmt.Println(err)
+			continue
+		}
 		req.Header.Add("X-Client", "tidlarr-proxy")
 		resp, err := client.Do(req)
 		if err != nil {
 			fmt.Println(err)
 			return "", err
 		}
+		defer resp.Body.Close()
 		//making the request body usable
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {

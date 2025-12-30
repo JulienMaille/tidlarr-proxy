@@ -160,7 +160,7 @@ func addurl(w http.ResponseWriter, u url.URL) {
 		"\"status\": true,\n" +
 		"\"nzo_ids\": [\"SABnzbd_nzo_" + Id + "\"]\n" +
 		"}"))
-	if Downloads[Id].downloaded != -1 {
+	if download, ok := Downloads[Id]; ok && download.downloaded != -1 {
 		go startDownload(Id)
 	}
 }
@@ -188,7 +188,7 @@ func addfile(w http.ResponseWriter, r *http.Request) {
 		"\"status\": true,\n" +
 		"\"nzo_ids\": [\"SABnzbd_nzo_" + Id + "\"]\n" +
 		"}"))
-	if Downloads[Id].downloaded != -1 {
+	if download, ok := Downloads[Id]; ok && download.downloaded != -1 {
 		go startDownload(Id)
 	}
 }
@@ -361,14 +361,16 @@ func history(w http.ResponseWriter, r *http.Request) {
 	//api?mode=history&name=delete&del_files=1&value=SABnzbd_nzo_0825646642830&archive=1&apikey=(removed)&output=json
 	if r.URL.Query().Get("name") == "delete" {
 		var id, _ = strings.CutPrefix(r.URL.Query().Get("value"), "SABnzbd_nzo_")
-		if r.URL.Query().Get("del_files") == "1" {
-			err := os.RemoveAll(filepath.Join(DownloadPath, "complete", Category, Downloads[id].FileName))
-			if err != nil {
-				fmt.Println("Couldn't delete folder " + Downloads[id].FileName)
-				fmt.Println(err)
+		if download, ok := Downloads[id]; ok {
+			if r.URL.Query().Get("del_files") == "1" {
+				err := os.RemoveAll(filepath.Join(DownloadPath, "complete", Category, download.FileName))
+				if err != nil {
+					fmt.Println("Couldn't delete folder " + download.FileName)
+					fmt.Println(err)
+				}
 			}
+			delete(Downloads, id)
 		}
-		delete(Downloads, id)
 	}
 
 	slots := []HistorySlot{}
@@ -423,7 +425,11 @@ func sanitizeFilename(name string) string {
 }
 
 func startDownload(Id string) {
-	download := Downloads[Id]
+	download, ok := Downloads[Id]
+	if !ok {
+		fmt.Println("Download ID not found: " + Id)
+		return
+	}
 	//create folder
 	var Folder string = filepath.Join(DownloadPath, "incomplete", Category, download.FileName)
 	err := os.Mkdir(Folder, 0755)
